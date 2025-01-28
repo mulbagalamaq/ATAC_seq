@@ -89,7 +89,3 @@ If you use this repository or the reproduced analysis in your work, please cite 
 ## License
 This project is licensed under the **MIT License**. 
 
----
-
-## About
-This repository was created as part of a project to reproduce and validate the findings of the paper **"Epigenetic traits inscribed in chromatin accessibility in aged hematopoietic stem cells"**. The analysis focuses on integrating single-cell RNA-seq and ATAC-seq data to study age-related changes in HSCs.
