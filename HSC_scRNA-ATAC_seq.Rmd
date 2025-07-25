@@ -1,0 +1,582 @@
+---
+title: "Multiomics Analysis Report "
+Author: "Aymen Maqsood"
+date: "2025-01-12"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  html_notebook: default
+---
+
+#  Computational Analysis of single-cell RNA and ATAC sequencing data
+
+## Introduction
+
+This analysis investigates the molecular underpinnings of aging in hematopoietic stem cells (HSCs) by examining changes in chromatin accessibility and gene expression between young and aged populations. The dataset was sourced from the GEO database (accession GSE57236) and processed using the R packages *Seurat* and *Signac*. My objective is to elucidate how age-related alterations in the transcriptional and chromatin accessibility landscapes influence HSC function, potentially shedding light on mechanisms of stem cell decline.
+
+### Chromatin Accessibility and Gene Expression Correlation
+
+Chromatin accessibility governs gene regulation by facilitating transcription factor binding and RNA polymerase recruitment. By integrating ATAC-seq (chromatin accessibility) and RNA-seq (gene expression) data, we aim to uncover how structural changes in chromatin correlate with transcriptional activity, offering insights into the regulatory dynamics of aging HSCs.
+
+
+```{r ignore errors,}
+knitr::opts_chunk$set(
+warning = FALSE,
+message = FALSE
+)
+```
+
+
+
+
+## Methodology
+
+
+### loading libraries 
+
+```{r}
+#install.packages('BiocManager')
+#install.packages('hdf5r') #need to read h5 files
+#install.packages('Seurat')
+#install.packages("Signac") #seurat add-on for analyzing chromatin (ATAC-seq)
+library(Signac)
+library(Seurat)
+```
+
+
+
+### Data 
+The data used for this analysis is publicly available on GEO under the accession GSE190424. The study provides high-resolution single-cell datasets, allowing detailed insights into HSC biology.
+
+Research presented in the paper:
+"Epigenetic traits inscribed in chromatin accessibility in aged hematopoietic stem cells" by Itokawa et al., published in Nature Communications (2022).
+DOI: 10.1038/s41467-022-30374-9 | PMID: 35577813
+
+
+ATAC-seq peak count matrix and single-cell metadata were loaded using Read10X_h5 function
+```{r}
+# load dataset
+counts <- Read10X_h5(filename = "~/Desktop/Projects/V1.0/single_cell/data/GSM5723631_Young_HSC_filtered_peak_bc_matrix.h5")
+```
+
+
+### Loading the meta data 
+```{r}
+# Create ChromatinAssay object for ATAC-seq data processing
+meta <- read.csv(
+file = '~/Desktop/Projects/V1.0/single_cell/data/GSM5723631_Young_HSC_singlecell.csv.gz',
+header = TRUE,
+row.names = 1)
+```
+
+
+```{r}
+chrom_assay <- CreateChromatinAssay(
+  counts = counts,
+  sep = c(":", "-"), # Genomic coordinate format
+  genome = 'mm10', # Mouse genome reference
+  fragments = '~/Desktop/Projects/V1.0/single_cell/data/GSM5723631_Young_HSC_fragments.tsv.gz',
+  min.cells = 10, # Filter peaks present in <10 cells
+  min.features = 200 # Filter cells with <200 peaks
+)
+
+
+```
+
+
+```{r}
+
+# Create Seurat object with chromatin assay
+data <- CreateSeuratObject(
+  counts = chrom_assay,
+  assay = "peaks",
+  meta.data = meta
+)
+```
+
+
+```{r}
+# data[[]]
+```
+
+## Genome Annotation
+```{r}
+# if (!require("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# 
+# BiocManager::install("EnsDb.Mmusculus.v79")
+# BiocManager::install("GenomeInfoDb") #translation between chromosome names
+# BiocManager::install("biovizBase")
+```
+
+```{r}
+library(GenomeInfoDb)
+library(EnsDb.Mmusculus.v79) # mouse genome annotation
+```
+
+
+```{r}
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Mmusculus.v79)
+seqlevelsStyle(annotations) <- 'UCSC' # chromosome naming 
+```
+
+
+
+```{r}
+Annotation(data) <- annotations # add genome annotation to Seurat object
+```
+
+
+```{r}
+# calculate nucleosome signal position
+data <- NucleosomeSignal(object = data) #fragment ratio 147-294: <147
+```
+
+```{r}
+#calculate TSS enrichment
+data <- TSSEnrichment(object = data, fast = FALSE)
+```
+
+```{r}
+#calculate blacklist ratio
+data$blacklist_ratio <- data$blacklist_region_fragments / data$peak_region_fragments
+
+# data[[]]
+```
+
+
+```{r}
+#calculate percentage of reads in peaks
+data$pct_reads_in_peaks <- data$peak_region_fragments / data$passed_filters * 100 
+```
+
+
+```{r}
+# Visualize data quality metrics usign violin plot 
+VlnPlot(
+  object = data,
+  features = c('peak_region_fragments', 'pct_reads_in_peaks', 
+                'blacklist_ratio', 'nucleosome_signal', 'TSS.enrichment'),
+  pt.size = 0.1,
+  ncol = 5
+)
+```
+
+
+
+```{r}
+# Filter cells based on qc filtered based on quality thresholds to remove low-fidelity data
+data <- subset(
+  x = data,
+  subset = peak_region_fragments > 3000 &
+    peak_region_fragments < 20000 &
+    pct_reads_in_peaks > 15 &
+    blacklist_ratio < 0.05 &
+    nucleosome_signal < 4 &
+    TSS.enrichment > 2
+)
+```
+
+
+
+```{r}
+# filtering dynamic range of data
+low_prf <- quantile(data[["peak_region_fragments"]]$peak_region_fragments, probs = 0.02)
+hig_prf <- quantile(data[["peak_region_fragments"]]$peak_region_fragments, probs = 0.98)
+low_prp <- quantile(data[["pct_reads_in_peaks"]]$pct_reads_in_peaks, probs = 0.02)
+
+high_blr <- quantile(data[["blacklist_ratio"]]$blacklist_ratio, probs = 0.98)
+
+hig_ns <- quantile(data[["nucleosome_signal"]]$nucleosome_signal, probs = 0.98)
+
+low_ts <- quantile(data[["TSS.enrichment"]]$TSS.enrichment, probs = 0.02)
+```
+
+```{r}
+print(low_prf)
+print(hig_prf)
+print(low_prp)
+print(high_blr)
+print(hig_ns)
+print(low_ts)
+```
+
+## Subset data based on quality metrics to refine the cell selection using quantile thresholds
+
+```{r}
+data <- subset(
+  x = data,
+  subset = peak_region_fragments > low_prf &
+    peak_region_fragments < hig_prf &
+    pct_reads_in_peaks > low_prp &
+    blacklist_ratio < high_blr &
+    nucleosome_signal < hig_ns &
+    TSS.enrichment > low_ts
+)
+```
+
+
+
+### Normalization, dimension reduction, and clustering
+The data are normalized using TF-IDF normalization. Then, dimensionality reduction is performed using Singular Value Decomposition (SVD) before UMAP is applied. Finally, graph-based clustering groups the cells based on the latent space.
+
+```{r}
+data <- RunTFIDF(data)
+```
+
+```{r}
+data <- FindTopFeatures(data, min.cutoff = 'q0')
+data
+```
+
+
+```{r}
+data <- RunSVD(data)
+```
+
+```{r}
+#depth correlation
+DepthCor(data)
+```
+
+```{r}
+#UMAP, find neighbors and perform clustering
+data <- RunUMAP(object = data, reduction = 'lsi', dims = 2:30)
+data <- FindNeighbors(object = data, reduction = 'lsi', dims = 2:30)
+data <- FindClusters(object = data, verbose = FALSE, algorithm = 3)
+DimPlot(object = data, label = TRUE) + NoLegend()
+```
+
+
+## Merging Multiple Samples Multiple samples
+To compare young and aged HSCs, the ATAC data from two samples are merged. A custom function import_atac is defined for data import.
+```{r}
+# Custom function to merge and integrate data from multiple samples
+import_atac <- function(count_path, meta_path, fragment_path){
+  counts <- Read10X_h5(filename = count_path)
+  
+  meta <- read.csv(
+  file = meta_path,
+  header = TRUE,
+  row.names = 1)
+  
+  
+  
+    chrom_assay <- CreateChromatinAssay(
+    counts = counts,
+    sep = c(":", "-"),
+    genome = 'mm10',
+    fragments = fragment_path,
+    min.cells = 10,
+    min.features = 200
+  )
+  
+  data <- CreateSeuratObject(
+    counts = chrom_assay,
+    assay = "peaks",
+    meta.data = meta
+  )
+  
+  Annotation(data) <- annotations
+  
+  
+  data <- NucleosomeSignal(object = data) #fragment ratio 147-294: <147  ---  mononucleosome:nucleosome-free
+  
+  
+  data <- TSSEnrichment(object = data, fast = FALSE)
+  
+  data$blacklist_ratio <- data$blacklist_region_fragments / data$peak_region_fragments
+  
+  data$pct_reads_in_peaks <- data$peak_region_fragments / data$passed_filters * 100 
+  
+  low_prf <- quantile(data[["peak_region_fragments"]]$peak_region_fragments, probs = 0.02)
+  hig_prf <- quantile(data[["peak_region_fragments"]]$peak_region_fragments, probs = 0.98)
+  low_prp <- quantile(data[["pct_reads_in_peaks"]]$pct_reads_in_peaks, probs = 0.02)
+  
+  high_blr <- quantile(data[["blacklist_ratio"]]$blacklist_ratio, probs = 0.98)
+  
+  hig_ns <- quantile(data[["nucleosome_signal"]]$nucleosome_signal, probs = 0.98)
+  
+  low_ts <- quantile(data[["TSS.enrichment"]]$TSS.enrichment, probs = 0.02)
+  
+  data <- subset(
+    x = data,
+    subset = peak_region_fragments > low_prf &
+      peak_region_fragments < hig_prf &
+      pct_reads_in_peaks > low_prp &
+      blacklist_ratio < high_blr &
+      nucleosome_signal < hig_ns &
+      TSS.enrichment > low_ts
+  )
+  
+  
+  
+  #data <- RunTFIDF(data)
+  #data <- FindTopFeatures(data, min.cutoff = 'q0')
+  #data <- RunSVD(data)
+
+  return(data)
+}
+```
+
+## Importing HSC data from various groups
+```{r}
+young <- import_atac("~/Desktop/Projects/V1.0/single_cell/data/GSM5723631_Young_HSC_filtered_peak_bc_matrix.h5",
+         '~/Desktop/Projects/V1.0/single_cell/data/GSM5723631_Young_HSC_singlecell.csv.gz',
+         '~/Desktop/Projects/V1.0/single_cell/data/GSM5723631_Young_HSC_fragments.tsv.gz')
+
+```
+
+```{r}
+old <- import_atac(
+  "~/Desktop/Projects/V1.0/single_cell/data/GSM5723632_Aged_HSC_filtered_peak_bc_matrix.h5",
+  '~/Desktop/Projects/V1.0/single_cell/data/GSM5723632_Aged_HSC_singlecell.csv.gz',
+  '~/Desktop/Projects/V1.0/single_cell/data/GSM5723632_Aged_HSC_fragments.tsv.gz'
+)
+
+```
+
+```{r}
+# Assign the dataset labels to the samples
+young$dataset <- "young"
+old$dataset <- "old"
+```
+
+
+```{r}
+# Merge the two datasets and enforce unique cell names
+data <- merge(young, old)
+```
+
+
+```{r}
+# inspect merged data object
+data
+```
+
+
+```{r}
+# additional normalization and dimension reduction on the merged dataset
+data <- FindTopFeatures(data, min.cutoff = 'q0')
+data <- RunTFIDF(data)
+data <- RunSVD(data)
+data
+```
+
+
+```{r}
+# Calculate UMAP embeddings and construct the nearest neighbor graph
+data <- RunUMAP(object = data, reduction = 'lsi', dims = 2:30)
+data <- FindNeighbors(object = data, reduction = 'lsi', dims = 2:30)
+```
+
+```{r}
+# Perform clustering on the merged dataset at a resolution of 0.4
+data <- FindClusters(object = data, verbose = FALSE, algorithm = 3, resolution = .4)
+```
+
+```{r}
+# Visualize clusters and compare groups using UMAP
+DimPlot(object = data, label = TRUE) + NoLegend()
+```
+
+```{r}
+# Visualize clusters and compare groups using UMAP
+DimPlot(object = data, label = TRUE, group.by = "dataset") + NoLegend()
+```
+
+# Data analysis
+we integrate gene activity analysis to determine how chromatin accessibility correlates with gene expression. The gene activity matrix is a proxy for the potential transcriptional output from regions of open chromatin. We then visualize the gene activity scores for selected genes and perform differential accessibility analysis to identify differentially accessible regions between young and aged HSCs.
+
+```{r}
+gene.activities <- GeneActivity(data)
+```
+
+```{r}
+# gene activities as a new RNA assay and normalize the data
+data[['RNA']] <- CreateAssayObject(counts = gene.activities)
+
+data <- NormalizeData(
+  object = data,
+  assay = 'RNA',
+  normalization.method = 'LogNormalize',
+  scale.factor = median(data$nCount_RNA)
+)
+```
+
+```{r}
+# examine the RNA assayy
+data[['RNA']]
+```
+
+
+```{r}
+# Switch the default assay to RNA and visualize expression of key genes (e.g., Kit, Pecam1, Itgam)
+DefaultAssay(data) <- 'RNA'
+
+
+FeaturePlot(
+  object = data,
+  features = c('Kit', 'Pecam1', 'Itgam'),
+  max.cutoff = 'q95'
+)
+```
+
+This analysis highlights genomic regions that display significant differences in chromatin accessibility between the two conditions
+```{r}
+DefaultAssay(data) <- 'peaks'
+
+da_peaks <- FindMarkers(
+  object = data,
+  ident.1 = rownames(data[[]][data$dataset == "old",]),
+  ident.2 = rownames(data[[]][data$dataset == "young",]),
+  min.pct = 0.05,
+  test.use = 'LR',
+  latent.vars = 'peak_region_fragments'
+)
+
+
+```
+
+
+```{r}
+da_peaks
+```
+
+```{r}
+# Annotate the differentially accessible peaks by finding the nearest gene and the distance 
+da_peaks$closest_gene <-ClosestFeature(data, regions = rownames(da_peaks))$gene_name
+da_peaks$distance <- ClosestFeature(data, regions = rownames(da_peaks))$distance
+da_peaks
+```
+
+
+## Inference from Differential Accessibility Analysis:
+- Distinct Chromatin States: The UMAP visualization shows clear separation between young and aged HSCs, indicative of distinct chromatin states.
+
+- Regulatory Differences: Differential accessibility results reveal specific regulatory regions that change with age. In particular, peaks with significant differences may correspond to regulatory elements controlling genes involved in stem cell function.
+
+- Potential Impact on Gene Expression: Integration with the RNA assay suggests that alterations in chromatin accessibility are likely influencing the expression of key genes (as visualized by the FeaturePlot of Kit, Pecam1, and Itgam).
+
+- Biological Relevance: The proximity of differentially accessible peaks to regulatory genes supports the hypothesis that shifts in chromatin structure contribute to the functional decline of aged HSCs.
+
+```{r}
+# chromatin accessibility profile 
+CoveragePlot(
+  object = data,
+  region = rownames(da_peaks)[2],
+  extend.upstream = 10000,
+  extend.downstream = 5000,
+  group.by = "dataset"
+)
+```
+
+
+
+```{r}
+# violin and feature plots to obtain both quantitative and spatial context of the differentially accessible peak
+plot1 <- VlnPlot(
+  object = data,
+  features = rownames(da_peaks)[2],
+  group.by = "dataset"
+)
+plot2 <- FeaturePlot(
+  object = data,
+  features = rownames(da_peaks)[2],
+  max.cutoff = 'q95'
+)
+
+plot1 | plot2
+```
+
+### Summary :
+UMAP plots reveal clear clustering patterns that distinguish young hematopoietic stem cell (HSC) populations from aged ones.
+
+Analysis of chromatin accessibility identifies specific regions that undergo significant changes with age, pointing to alterations in regulatory activity.
+
+By integrating gene activity data with ATAC-seq results, several candidate genes emerge as potential drivers of the phenotypic differences observed between young and aged HSCs.
+
+### Conclusion :
+This multiomics study integrates single-cell RNA sequencing and ATAC-seq data to provide a detailed perspective on changes in chromatin accessibility and gene expression in young versus aged HSCs. The findings highlight distinct regulatory landscapes between the two groups, shedding light on molecular mechanisms that contribute to stem cell aging.
+
+# --- INTERACTIVE QC PLOTS WITH PLOTLY ---
+
+```{r plotly_qc, message=FALSE}
+# Install and load plotly if not already installed
+if (!require(plotly)) install.packages('plotly'); library(plotly)
+
+# Create interactive violin plots for QC metrics
+qc_metrics <- c('peak_region_fragments', 'pct_reads_in_peaks', 'blacklist_ratio', 'nucleosome_signal', 'TSS.enrichment')
+qc_data <- data.frame(
+  cell = colnames(data),
+  t(sapply(qc_metrics, function(x) data[[x]][,1]))
+)
+colnames(qc_data)[-1] <- qc_metrics
+
+# Example: Interactive violin plot for peak_region_fragments
+p <- plot_ly(qc_data, y = ~peak_region_fragments, type = 'violin', box = list(visible = T), meanline = list(visible = T))
+p <- p %>% layout(title = 'Interactive Violin Plot: Peak Region Fragments')
+p
+
+
+
+
+
+# Save static PNG for README
+if (!dir.exists('plots')) dir.create('plots')
+export(p, file = 'plots/violin_peak_region_fragments.png')
+```
+
+# --- HARMONY BATCH CORRECTION ---
+
+```{r harmony_batch, message=FALSE}
+# Install and load harmony if not already installed
+if (!require(harmony)) devtools::install_github('immunogenomics/harmony'); library(harmony)
+
+# Run Harmony on merged data (after SVD, before UMAP)
+data <- RunHarmony(
+  object = data,
+  group.by.vars = 'dataset',
+  reduction = 'lsi',
+  dims.use = 2:30
+)
+
+# UMAP and clustering on Harmony embeddings
+data <- RunUMAP(data, reduction = 'harmony', dims = 2:30)
+data <- FindNeighbors(data, reduction = 'harmony', dims = 2:30)
+data <- FindClusters(data, resolution = 0.4)
+
+# Plot Harmony-corrected UMAP
+harmony_umap <- DimPlot(data, reduction = 'umap', group.by = 'dataset', label = TRUE) + ggtitle('Harmony Batch Corrected UMAP')
+print(harmony_umap)
+ggsave('plots/harmony_umap.png', harmony_umap)
+```
+
+# --- LIGER MULTI-MODAL INTEGRATION ---
+
+```{r liger_integration, message=FALSE}
+# Install and load rliger if not already installed
+if (!require(rliger)) devtools::install_github('MacoskoLab/rliger'); library(rliger)
+
+# Prepare data for LIGER (example: using gene activity and ATAC)
+# Create a list of matrices for LIGER: one for RNA, one for ATAC
+liger_list <- list(
+  RNA = as.matrix(data[['RNA']]@counts),
+  ATAC = as.matrix(data[['peaks']]@counts)
+)
+
+# Create LIGER object
+liger_obj <- createLiger(liger_list)
+liger_obj <- normalize(liger_obj)
+liger_obj <- selectGenes(liger_obj)
+liger_obj <- scaleNotCenter(liger_obj)
+liger_obj <- optimizeALS(liger_obj, k = 20)
+liger_obj <- quantile_norm(liger_obj)
+
+# UMAP on LIGER factors
+liger_obj <- runUMAP(liger_obj, distance = 'cosine', n_neighbors = 30)
+liger_umap <- plotByDatasetAndCluster(liger_obj, return.plots = TRUE)[[1]]
+print(liger_umap)
+ggsave('plots/liger_umap.png', liger_umap)
+```

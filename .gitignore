@@ -3,3 +3,4 @@ data/*
 
 # Allow .gitignore itself in case it's inside data/
 !.gitignore
+.Rproj.user

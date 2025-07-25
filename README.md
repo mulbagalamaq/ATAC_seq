@@ -6,6 +6,13 @@ This work is a reproduction of the research presented in the paper:
 **"Epigenetic traits inscribed in chromatin accessibility in aged hematopoietic stem cells"** by Itokawa et al., published in *Nature Communications* (2022).  
 [DOI: 10.1038/s41467-022-30374-9](https://doi.org/10.1038/s41467-022-30374-9) | [PMID: 35577813](https://pubmed.ncbi.nlm.nih.gov/35577813/)
 
+
+_____________________________________________________________________________________________________________________
+
+PLEASE READ MY REPORT FOR A DETAILED ANALYSIS OF THE PAPER AND THE REPRODUCED RESULTS. Thanks :)
+_____________________________________________________________________________________________________________________
+
+
 ---
 
 ## Data Source
