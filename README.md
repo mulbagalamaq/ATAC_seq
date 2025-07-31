@@ -3,6 +3,21 @@
 ## Overview
 This repository contains the analysis and results of a single-cell multi-omics study combining **scRNA-seq** and **ATAC-seq** data to investigate **hematopoietic stem cells (HSCs)** across different age groups. The analysis focuses on the transcriptional and chromatin accessibility landscapes in **young and aged HSCs**, with a particular emphasis on age-related changes in chromatin accessibility and stress response pathways.
 
+## Project Structure
+```
+single_cell/
+├── README.md                 # Main project documentation
+├── scripts/                  # Analysis scripts
+├── data/                     # Raw and processed data
+├── plots/                    # Generated visualizations
+├── output/                   # Analysis outputs
+├── results/                  # Processed results
+├── reports/                  # Generated reports
+└── docs/                     # Documentation
+```
+
+For detailed project structure, see [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md).
+
 ## Quick Start
 1. Clone this repository
 2. Install required R packages:
@@ -161,7 +176,7 @@ Itokawa N, Oshima M, Koide S, Takayama N et al. Epigenetic traits inscribed in c
 ```
 
 ## License
-This project is licensed under the **MIT License**. 
+This project is licensed under the **MIT License**. See [docs/LICENSE](docs/LICENSE) for details.
 
 ## Contact
 For questions or issues, please open an issue in this repository.

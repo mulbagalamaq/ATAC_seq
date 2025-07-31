@@ -15,15 +15,32 @@
 *.h5
 *.tsv.gz
 *.csv.gz
+*.tar
+*.txt
 
 # OS specific files
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
 
 # Temporary files
 *.tmp
 *.temp
+*~
 
-# Output directories
-output/
-plots/
+# IDE files
+.vscode/
+.idea/
+
+# Output directories (keep structure but ignore contents)
+output/*
+!output/.gitkeep
+results/*
+!results/.gitkeep
+reports/*
+!reports/.gitkeep
+
+# Data directory (keep structure but ignore contents)
+data/*
+!data/.gitkeep
